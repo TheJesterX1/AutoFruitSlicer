@@ -5,19 +5,17 @@ import android.graphics.Color
 
 object FruitDetector {
 
-    private const val SAMPLE_STEP = 8       // finer grid for better detection
-    private const val MIN_CLUSTER_SIZE = 4  // lower threshold
-    private const val CLUSTER_RADIUS = 100  // wider merge radius
+    private const val SAMPLE_STEP = 8
+    private const val MIN_CLUSTER_SIZE = 4
+    private const val CLUSTER_RADIUS = 100
 
     data class FruitTarget(val x: Float, val y: Float)
 
     fun detect(bitmap: Bitmap): List<FruitTarget> {
         val width = bitmap.width
         val height = bitmap.height
-
-        // Skip top 10% (HUD) and bottom 8% (UI buttons)
         val startY = (height * 0.10).toInt()
-        val endY = (height * 0.92).toInt()
+        val endY   = (height * 0.92).toInt()
 
         val hits = mutableListOf<Pair<Int, Int>>()
         val hsv = FloatArray(3)
@@ -26,9 +24,7 @@ object FruitDetector {
             for (x in 0 until width step SAMPLE_STEP) {
                 val pixel = bitmap.getPixel(x, y)
                 Color.colorToHSV(pixel, hsv)
-                if (isFruitColor(hsv, pixel)) {
-                    hits.add(Pair(x, y))
-                }
+                if (isFruitColor(hsv, pixel)) hits.add(x to y)
             }
         }
 
@@ -36,32 +32,26 @@ object FruitDetector {
     }
 
     private fun isFruitColor(hsv: FloatArray, pixel: Int): Boolean {
-        val hue = hsv[0]
-        val sat = hsv[1]
+        val sat   = hsv[1]
         val value = hsv[2]
+        val hue   = hsv[0]
 
-        // Must be vivid and bright
-        if (sat < 0.35f || value < 0.30f) return false
+        // Must be vivid and bright — not black (bomb) or white (background)
+        if (sat < 0.30f || value < 0.25f) return false
+        val avg = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+        if (avg < 30 || avg > 245) return false
 
-        // Skip near-black (bombs) and near-white (background)
-        val r = Color.red(pixel)
-        val g = Color.green(pixel)
-        val b = Color.blue(pixel)
-        val brightness = (r + g + b) / 3
-        if (brightness < 40 || brightness > 240) return false
-
-        // Fruit hue ranges — reds, oranges, yellows, greens, purples, pinks
-        return hue <= 20f || hue >= 340f          // red / strawberry
-                || hue in 20f..80f               // orange / yellow / lemon
-                || hue in 80f..170f              // green / kiwi / lime / watermelon rind
-                || hue in 260f..340f             // purple / plum / dragonfruit
+        // Fruit hue ranges
+        return hue <= 20f || hue >= 340f       // red / strawberry
+            || hue in 20f..85f                 // orange / yellow / lemon
+            || hue in 85f..175f               // green / kiwi / lime
+            || hue in 260f..340f              // purple / plum / dragonfruit
     }
 
     private fun clusterHits(hits: List<Pair<Int, Int>>): List<FruitTarget> {
         if (hits.isEmpty()) return emptyList()
-
         val assigned = BooleanArray(hits.size)
-        val clusters = mutableListOf<List<Pair<Int, Int>>>()
+        val result = mutableListOf<FruitTarget>()
 
         for (i in hits.indices) {
             if (assigned[i]) continue
@@ -69,7 +59,7 @@ object FruitDetector {
             assigned[i] = true
             for (j in i + 1 until hits.size) {
                 if (assigned[j]) continue
-                val dx = (hits[i].first - hits[j].first).toFloat()
+                val dx = (hits[i].first  - hits[j].first).toFloat()
                 val dy = (hits[i].second - hits[j].second).toFloat()
                 if (dx * dx + dy * dy < CLUSTER_RADIUS * CLUSTER_RADIUS) {
                     cluster.add(hits[j])
@@ -77,15 +67,12 @@ object FruitDetector {
                 }
             }
             if (cluster.size >= MIN_CLUSTER_SIZE) {
-                clusters.add(cluster)
+                result.add(FruitTarget(
+                    cluster.map { it.first  }.average().toFloat(),
+                    cluster.map { it.second }.average().toFloat()
+                ))
             }
         }
-
-        return clusters.map { cluster ->
-            FruitTarget(
-                cluster.map { it.first }.average().toFloat(),
-                cluster.map { it.second }.average().toFloat()
-            )
-        }
+        return result
     }
 }
