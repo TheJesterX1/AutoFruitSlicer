@@ -3,45 +3,30 @@ package com.example.fruitslicer
 import android.graphics.Bitmap
 import android.graphics.Color
 
-/**
- * Scans a bitmap for fruit-like colors and returns a list of (x, y) center points.
- *
- * Fruit Ninja fruits are typically bright reds, oranges, yellows, greens, and purples.
- * We sample a grid across the screen and flag pixels whose HSV hue/saturation match
- * known fruit palettes. Neighboring hits are clustered into single target points.
- */
 object FruitDetector {
 
-    // How densely we sample the screen (every N pixels)
-    private const val SAMPLE_STEP = 12
-
-    // Minimum cluster size to be considered a "real" fruit (filters noise)
-    private const val MIN_CLUSTER_SIZE = 6
-
-    // Cluster merge radius in pixels
-    private const val CLUSTER_RADIUS = 80
+    private const val SAMPLE_STEP = 8       // finer grid for better detection
+    private const val MIN_CLUSTER_SIZE = 4  // lower threshold
+    private const val CLUSTER_RADIUS = 100  // wider merge radius
 
     data class FruitTarget(val x: Float, val y: Float)
 
-    /**
-     * Returns a list of detected fruit center points from the given bitmap.
-     */
     fun detect(bitmap: Bitmap): List<FruitTarget> {
         val width = bitmap.width
         val height = bitmap.height
 
-        // Skip top 15% (score bar) and bottom 5% (UI) to avoid false positives
-        val startY = (height * 0.15).toInt()
-        val endY = (height * 0.95).toInt()
+        // Skip top 10% (HUD) and bottom 8% (UI buttons)
+        val startY = (height * 0.10).toInt()
+        val endY = (height * 0.92).toInt()
 
         val hits = mutableListOf<Pair<Int, Int>>()
-
         val hsv = FloatArray(3)
+
         for (y in startY until endY step SAMPLE_STEP) {
             for (x in 0 until width step SAMPLE_STEP) {
                 val pixel = bitmap.getPixel(x, y)
                 Color.colorToHSV(pixel, hsv)
-                if (isFruitColor(hsv)) {
+                if (isFruitColor(hsv, pixel)) {
                     hits.add(Pair(x, y))
                 }
             }
@@ -50,37 +35,28 @@ object FruitDetector {
         return clusterHits(hits)
     }
 
-    /**
-     * Checks whether an HSV color matches a typical Fruit Ninja fruit.
-     * Fruits are highly saturated and bright — bombs are black.
-     */
-    private fun isFruitColor(hsv: FloatArray): Boolean {
-        val hue = hsv[0]        // 0–360
-        val sat = hsv[1]        // 0–1
-        val value = hsv[2]      // 0–1
+    private fun isFruitColor(hsv: FloatArray, pixel: Int): Boolean {
+        val hue = hsv[0]
+        val sat = hsv[1]
+        val value = hsv[2]
 
-        // Must be vivid (high saturation & brightness) — avoids background/shadows
-        if (sat < 0.45f || value < 0.35f) return false
+        // Must be vivid and bright
+        if (sat < 0.35f || value < 0.30f) return false
 
-        // Reject very dark colors (bombs are ~black)
-        if (value < 0.20f) return false
+        // Skip near-black (bombs) and near-white (background)
+        val r = Color.red(pixel)
+        val g = Color.green(pixel)
+        val b = Color.blue(pixel)
+        val brightness = (r + g + b) / 3
+        if (brightness < 40 || brightness > 240) return false
 
-        // Fruit hue ranges:
-        // Red/Strawberry:  0–15  and  345–360
-        // Orange/Peach:    15–45
-        // Yellow/Lemon:    45–70
-        // Green/Kiwi/Lime: 70–160
-        // Purple/Plum:     270–320
-        // Pink/Watermelon: 320–345
-
-        return hue <= 15f || hue >= 345f          // reds
-                || (hue in 15f..160f)             // orange, yellow, green
-                || (hue in 270f..345f)            // purple, pink
+        // Fruit hue ranges — reds, oranges, yellows, greens, purples, pinks
+        return hue <= 20f || hue >= 340f          // red / strawberry
+                || hue in 20f..80f               // orange / yellow / lemon
+                || hue in 80f..170f              // green / kiwi / lime / watermelon rind
+                || hue in 260f..340f             // purple / plum / dragonfruit
     }
 
-    /**
-     * Groups nearby hit pixels into clusters and returns each cluster's centroid.
-     */
     private fun clusterHits(hits: List<Pair<Int, Int>>): List<FruitTarget> {
         if (hits.isEmpty()) return emptyList()
 
@@ -95,7 +71,7 @@ object FruitDetector {
                 if (assigned[j]) continue
                 val dx = (hits[i].first - hits[j].first).toFloat()
                 val dy = (hits[i].second - hits[j].second).toFloat()
-                if (Math.sqrt((dx * dx + dy * dy).toDouble()) < CLUSTER_RADIUS) {
+                if (dx * dx + dy * dy < CLUSTER_RADIUS * CLUSTER_RADIUS) {
                     cluster.add(hits[j])
                     assigned[j] = true
                 }
@@ -106,9 +82,10 @@ object FruitDetector {
         }
 
         return clusters.map { cluster ->
-            val cx = cluster.map { it.first }.average().toFloat()
-            val cy = cluster.map { it.second }.average().toFloat()
-            FruitTarget(cx, cy)
+            FruitTarget(
+                cluster.map { it.first }.average().toFloat(),
+                cluster.map { it.second }.average().toFloat()
+            )
         }
     }
 }
