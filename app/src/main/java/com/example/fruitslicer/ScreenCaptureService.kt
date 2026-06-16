@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
@@ -25,13 +26,22 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val CHANNEL_ID = "FruitSlicerChannel"
+        const val PREF_NAME = "FruitSlicerPrefs"
+        const val PREF_READY = "capture_ready"
         private const val TAG = "ScreenCaptureService"
 
-        // Use a simple flag instead of holding the projection object
-        @Volatile var isReady = false
         @Volatile var latestBitmap: Bitmap? = null
-        // Keep projection here so BotController can check
         @Volatile var mediaProjection: MediaProjection? = null
+
+        fun isReady(context: Context): Boolean {
+            return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                .getBoolean(PREF_READY, false)
+        }
+
+        fun setReady(context: Context, ready: Boolean) {
+            context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(PREF_READY, ready).apply()
+        }
     }
 
     private var imageReader: ImageReader? = null
@@ -41,6 +51,7 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        setReady(this, false)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -55,15 +66,12 @@ class ScreenCaptureService : Service() {
         val resultData = intent?.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
 
         if (resultCode == -1 || resultData == null) {
-            Log.e(TAG, "Bad intent data")
+            Log.e(TAG, "Missing projection data")
             stopSelf()
             return START_NOT_STICKY
         }
 
-        handler.postDelayed({
-            setupCapture(resultCode, resultData)
-        }, 500) // small delay to let foreground service fully start
-
+        handler.postDelayed({ setupCapture(resultCode, resultData) }, 300)
         return START_STICKY
     }
 
@@ -83,7 +91,9 @@ class ScreenCaptureService : Service() {
 
             imageReader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
             imageReader!!.setOnImageAvailableListener({ reader ->
-                val image = try { reader.acquireLatestImage() } catch (e: Exception) { return@setOnImageAvailableListener } ?: return@setOnImageAvailableListener
+                val image = try {
+                    reader.acquireLatestImage()
+                } catch (e: Exception) { null } ?: return@setOnImageAvailableListener
                 try {
                     val planes = image.planes
                     val buffer = planes[0].buffer
@@ -96,7 +106,6 @@ class ScreenCaptureService : Service() {
                     bmp.recycle()
                     latestBitmap?.recycle()
                     latestBitmap = cropped
-                    isReady = true
                 } catch (e: Exception) {
                     Log.e(TAG, "Frame error: ${e.message}")
                 } finally {
@@ -110,8 +119,9 @@ class ScreenCaptureService : Service() {
                 imageReader!!.surface, null, handler
             )
 
-            isReady = true
-            Log.d(TAG, "Capture setup complete")
+            // Mark ready in shared prefs so MainActivity can read it
+            setReady(this, true)
+            Log.d(TAG, "Capture ready!")
 
         } catch (e: Exception) {
             Log.e(TAG, "Setup failed: ${e.message}")
@@ -121,7 +131,7 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        isReady = false
+        setReady(this, false)
         mediaProjection = null
         virtualDisplay?.release()
         imageReader?.close()
