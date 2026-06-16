@@ -27,15 +27,15 @@ class ScreenCaptureService : Service() {
         const val CHANNEL_ID = "FruitSlicerChannel"
         private const val TAG = "ScreenCaptureService"
 
-        @Volatile var mediaProjection: MediaProjection? = null
+        // Use a simple flag instead of holding the projection object
+        @Volatile var isReady = false
         @Volatile var latestBitmap: Bitmap? = null
+        // Keep projection here so BotController can check
+        @Volatile var mediaProjection: MediaProjection? = null
     }
 
     private var imageReader: ImageReader? = null
     private var virtualDisplay: VirtualDisplay? = null
-    private var screenWidth = 1080
-    private var screenHeight = 2340
-    private var screenDensity = 480
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
@@ -44,7 +44,6 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Start foreground IMMEDIATELY before doing anything else
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Fruit Auto Slicer")
             .setContentText("Screen capture active")
@@ -52,75 +51,80 @@ class ScreenCaptureService : Service() {
             .build()
         startForeground(1, notification)
 
-        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, -1) ?: run {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA) ?: run {
+        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, -1) ?: -1
+        val resultData = intent?.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+
+        if (resultCode == -1 || resultData == null) {
+            Log.e(TAG, "Bad intent data")
             stopSelf()
             return START_NOT_STICKY
         }
 
+        handler.postDelayed({
+            setupCapture(resultCode, resultData)
+        }, 500) // small delay to let foreground service fully start
+
+        return START_STICKY
+    }
+
+    private fun setupCapture(resultCode: Int, resultData: Intent) {
         try {
             val metrics = DisplayMetrics()
             val wm = getSystemService(WINDOW_SERVICE) as WindowManager
             @Suppress("DEPRECATION")
             wm.defaultDisplay.getMetrics(metrics)
-            screenWidth = metrics.widthPixels
-            screenHeight = metrics.heightPixels
-            screenDensity = metrics.densityDpi
+            val w = metrics.widthPixels
+            val h = metrics.heightPixels
+            val dpi = metrics.densityDpi
 
-            val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            val projection = projectionManager.getMediaProjection(resultCode, resultData)
+            val pm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            val projection = pm.getMediaProjection(resultCode, resultData)
             mediaProjection = projection
 
-            imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
+            imageReader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
             imageReader!!.setOnImageAvailableListener({ reader ->
-                val image = try { reader.acquireLatestImage() } catch (e: Exception) { null } ?: return@setOnImageAvailableListener
+                val image = try { reader.acquireLatestImage() } catch (e: Exception) { return@setOnImageAvailableListener } ?: return@setOnImageAvailableListener
                 try {
                     val planes = image.planes
                     val buffer = planes[0].buffer
                     val pixelStride = planes[0].pixelStride
                     val rowStride = planes[0].rowStride
-                    val rowPadding = rowStride - pixelStride * screenWidth
-                    val bmp = Bitmap.createBitmap(
-                        screenWidth + rowPadding / pixelStride,
-                        screenHeight,
-                        Bitmap.Config.ARGB_8888
-                    )
+                    val rowPadding = rowStride - pixelStride * w
+                    val bmp = Bitmap.createBitmap(w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888)
                     bmp.copyPixelsFromBuffer(buffer)
-                    val cropped = Bitmap.createBitmap(bmp, 0, 0, screenWidth, screenHeight)
+                    val cropped = Bitmap.createBitmap(bmp, 0, 0, w, h)
                     bmp.recycle()
                     latestBitmap?.recycle()
                     latestBitmap = cropped
+                    isReady = true
                 } catch (e: Exception) {
-                    Log.e(TAG, "Image processing error: ${e.message}")
+                    Log.e(TAG, "Frame error: ${e.message}")
                 } finally {
                     image.close()
                 }
             }, handler)
 
             virtualDisplay = projection.createVirtualDisplay(
-                "FruitSlicerCapture",
-                screenWidth, screenHeight, screenDensity,
+                "FruitCapture", w, h, dpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 imageReader!!.surface, null, handler
             )
 
+            isReady = true
+            Log.d(TAG, "Capture setup complete")
+
         } catch (e: Exception) {
-            Log.e(TAG, "Setup error: ${e.message}")
+            Log.e(TAG, "Setup failed: ${e.message}")
             stopSelf()
         }
-
-        return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        isReady = false
+        mediaProjection = null
         virtualDisplay?.release()
         imageReader?.close()
-        mediaProjection?.stop()
-        mediaProjection = null
         latestBitmap?.recycle()
         latestBitmap = null
     }
@@ -128,11 +132,7 @@ class ScreenCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Fruit Slicer Capture",
-            NotificationManager.IMPORTANCE_LOW
-        )
+        val channel = NotificationChannel(CHANNEL_ID, "Fruit Slicer", NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 }
