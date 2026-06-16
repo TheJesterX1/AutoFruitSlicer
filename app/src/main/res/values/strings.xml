@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FruitAutoSlicer</string>
+    <string name="accessibility_service_label">Fruit Auto Slicer</string>
+    <string name="accessibility_service_description">Dispatches swipe gestures to automatically slice fruits on screen.</string>
+</resources>

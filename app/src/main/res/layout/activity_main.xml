@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:background="#1A1A2E">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🍉 Fruit Auto Slicer"
+        android:textSize="26sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:layout_marginTop="32dp"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: Idle"
+        android:textSize="14sp"
+        android:textColor="#AAAAAA"
+        android:layout_marginBottom="32dp" />
+
+    <!-- Step 1 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="STEP 1 — Enable Accessibility"
+        android:textSize="12sp"
+        android:textColor="#E53935"
+        android:textAllCaps="true"
+        android:letterSpacing="0.1"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnAccessibility"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="Open Accessibility Settings"
+        android:backgroundTint="#E53935"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Step 2 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="STEP 2 — Grant Screen Capture"
+        android:textSize="12sp"
+        android:textColor="#E53935"
+        android:textAllCaps="true"
+        android:letterSpacing="0.1"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnStartCapture"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="Request Screen Capture"
+        android:backgroundTint="#7B1FA2"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Step 3 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="STEP 3 — Start / Stop Bot"
+        android:textSize="12sp"
+        android:textColor="#43A047"
+        android:textAllCaps="true"
+        android:letterSpacing="0.1"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnToggleBot"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="▶ START BOT"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:backgroundTint="#43A047"
+        android:layout_marginBottom="32dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ℹ After starting, switch to Fruit Ninja. The bot will detect fruits by color and swipe them automatically."
+        android:textSize="13sp"
+        android:textColor="#888888"
+        android:gravity="center" />
+
+</LinearLayout>
