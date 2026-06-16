@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
@@ -19,6 +21,7 @@ class MainActivity : AppCompatActivity() {
 
     private var projectionManager: MediaProjectionManager? = null
     private var botRunning = false
+    private val handler = Handler(Looper.getMainLooper())
 
     companion object {
         const val REQUEST_MEDIA_PROJECTION = 1001
@@ -93,13 +96,23 @@ class MainActivity : AppCompatActivity() {
             btnToggleBot.text = "⏹ STOP BOT"
             btnToggleBot.backgroundTintList = android.content.res.ColorStateList.valueOf(
                 android.graphics.Color.parseColor("#E53935"))
-            tvStatus.text = "Status: 🟢 Running — switch to Fruit Ninja!"
+            // Countdown so user knows to switch to Fruit Ninja
+            startCountdown(5)
         } else {
             BotController.stop()
             btnToggleBot.text = "▶ START BOT"
             btnToggleBot.backgroundTintList = android.content.res.ColorStateList.valueOf(
                 android.graphics.Color.parseColor("#43A047"))
             tvStatus.text = "Status: ⏹ Stopped"
+        }
+    }
+
+    private fun startCountdown(seconds: Int) {
+        if (seconds > 0) {
+            tvStatus.text = "⚡ Switch to Fruit Ninja now! Starting in $seconds..."
+            handler.postDelayed({ startCountdown(seconds - 1) }, 1000)
+        } else {
+            tvStatus.text = "Status: 🟢 Bot running!"
         }
     }
 
