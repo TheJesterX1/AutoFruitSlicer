@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -22,7 +23,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Accessibility Service for dispatching swipe gestures -->
         <service
             android:name=".SlicerAccessibilityService"
             android:exported="true"
@@ -36,7 +36,6 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- Foreground service for screen capture -->
         <service
             android:name=".ScreenCaptureService"
             android:exported="false"
