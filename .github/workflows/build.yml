@@ -14,6 +14,11 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+      - name: Download Gradle wrapper jar
+        run: |
+          mkdir -p gradle/wrapper
+          curl -o gradle/wrapper/gradle-wrapper.jar \
+            https://github.com/gradle/gradle/raw/v8.4.0/gradle/wrapper/gradle-wrapper.jar
       - uses: android-actions/setup-android@v3
       - run: chmod +x gradlew
       - run: ./gradlew assembleDebug --stacktrace
