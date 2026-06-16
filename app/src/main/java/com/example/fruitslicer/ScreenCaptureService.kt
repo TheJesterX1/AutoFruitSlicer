@@ -12,8 +12,12 @@ import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
+import android.util.Log
+import android.view.WindowManager
 
 class ScreenCaptureService : Service() {
 
@@ -21,8 +25,8 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val CHANNEL_ID = "FruitSlicerChannel"
+        private const val TAG = "ScreenCaptureService"
 
-        // Shared state accessible by BotController
         @Volatile var mediaProjection: MediaProjection? = null
         @Volatile var latestBitmap: Bitmap? = null
     }
@@ -32,9 +36,15 @@ class ScreenCaptureService : Service() {
     private var screenWidth = 1080
     private var screenHeight = 2340
     private var screenDensity = 480
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        createNotificationChannel()
+        // Start foreground IMMEDIATELY before doing anything else
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Fruit Auto Slicer")
             .setContentText("Screen capture active")
@@ -42,52 +52,65 @@ class ScreenCaptureService : Service() {
             .build()
         startForeground(1, notification)
 
-        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, -1) ?: return START_NOT_STICKY
-        val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA) ?: return START_NOT_STICKY
+        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, -1) ?: run {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA) ?: run {
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
-        val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
-        wm.defaultDisplay.getMetrics(metrics)
-        screenWidth = metrics.widthPixels
-        screenHeight = metrics.heightPixels
-        screenDensity = metrics.densityDpi
+        try {
+            val metrics = DisplayMetrics()
+            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getMetrics(metrics)
+            screenWidth = metrics.widthPixels
+            screenHeight = metrics.heightPixels
+            screenDensity = metrics.densityDpi
 
-        val projection = projectionManager.getMediaProjection(resultCode, resultData)
-        mediaProjection = projection
+            val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            val projection = projectionManager.getMediaProjection(resultCode, resultData)
+            mediaProjection = projection
 
-        imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
-        imageReader!!.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            try {
-                val planes = image.planes
-                val buffer = planes[0].buffer
-                val pixelStride = planes[0].pixelStride
-                val rowStride = planes[0].rowStride
-                val rowPadding = rowStride - pixelStride * screenWidth
-                val bmp = Bitmap.createBitmap(
-                    screenWidth + rowPadding / pixelStride,
-                    screenHeight,
-                    Bitmap.Config.ARGB_8888
-                )
-                bmp.copyPixelsFromBuffer(buffer)
-                // Crop to exact screen size
-                val cropped = Bitmap.createBitmap(bmp, 0, 0, screenWidth, screenHeight)
-                bmp.recycle()
-                latestBitmap?.recycle()
-                latestBitmap = cropped
-            } finally {
-                image.close()
-            }
-        }, null)
+            imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
+            imageReader!!.setOnImageAvailableListener({ reader ->
+                val image = try { reader.acquireLatestImage() } catch (e: Exception) { null } ?: return@setOnImageAvailableListener
+                try {
+                    val planes = image.planes
+                    val buffer = planes[0].buffer
+                    val pixelStride = planes[0].pixelStride
+                    val rowStride = planes[0].rowStride
+                    val rowPadding = rowStride - pixelStride * screenWidth
+                    val bmp = Bitmap.createBitmap(
+                        screenWidth + rowPadding / pixelStride,
+                        screenHeight,
+                        Bitmap.Config.ARGB_8888
+                    )
+                    bmp.copyPixelsFromBuffer(buffer)
+                    val cropped = Bitmap.createBitmap(bmp, 0, 0, screenWidth, screenHeight)
+                    bmp.recycle()
+                    latestBitmap?.recycle()
+                    latestBitmap = cropped
+                } catch (e: Exception) {
+                    Log.e(TAG, "Image processing error: ${e.message}")
+                } finally {
+                    image.close()
+                }
+            }, handler)
 
-        virtualDisplay = projection.createVirtualDisplay(
-            "FruitSlicerCapture",
-            screenWidth, screenHeight, screenDensity,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader!!.surface, null, null
-        )
+            virtualDisplay = projection.createVirtualDisplay(
+                "FruitSlicerCapture",
+                screenWidth, screenHeight, screenDensity,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader!!.surface, null, handler
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Setup error: ${e.message}")
+            stopSelf()
+        }
 
         return START_STICKY
     }
