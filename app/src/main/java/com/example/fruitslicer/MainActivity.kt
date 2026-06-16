@@ -3,6 +3,7 @@ package com.example.fruitslicer
 import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -12,6 +13,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.Manifest
 
 class MainActivity : AppCompatActivity() {
 
@@ -24,6 +29,15 @@ class MainActivity : AppCompatActivity() {
     private var botRunning = false
     private val handler = Handler(Looper.getMainLooper())
 
+    // Step 1: ask for POST_NOTIFICATIONS (Android 13+)
+    private val notifPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        // whether granted or not, proceed to capture
+        launchCaptureIntent()
+    }
+
+    // Step 2: the actual screen capture dialog
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -33,11 +47,10 @@ class MainActivity : AppCompatActivity() {
                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
             }
             startForegroundService(serviceIntent)
-
-            // Poll until the service confirms it's ready
+            tvStatus.text = "Status: ⏳ Starting capture..."
             pollForReady()
         } else {
-            Toast.makeText(this, "Screen capture denied.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Screen capture was denied — please try again.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -45,9 +58,8 @@ class MainActivity : AppCompatActivity() {
         if (ScreenCaptureService.isReady) {
             tvStatus.text = "Status: ✅ Ready — press START BOT"
             btnToggleBot.isEnabled = true
-            Toast.makeText(this, "Screen capture ready!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "✅ Screen capture ready!", Toast.LENGTH_SHORT).show()
         } else {
-            // Check again in 300ms
             handler.postDelayed({ pollForReady() }, 300)
         }
     }
@@ -56,13 +68,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvStatus = findViewById(R.id.tvStatus)
+        tvStatus       = findViewById(R.id.tvStatus)
         btnAccessibility = findViewById(R.id.btnAccessibility)
-        btnStartCapture = findViewById(R.id.btnStartCapture)
-        btnToggleBot = findViewById(R.id.btnToggleBot)
+        btnStartCapture  = findViewById(R.id.btnStartCapture)
+        btnToggleBot     = findViewById(R.id.btnToggleBot)
 
         projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-
         btnToggleBot.isEnabled = false
 
         btnAccessibility.setOnClickListener {
@@ -72,17 +83,33 @@ class MainActivity : AppCompatActivity() {
 
         btnStartCapture.setOnClickListener {
             if (!isAccessibilityServiceEnabled()) {
-                Toast.makeText(this, "Enable Accessibility Service first!", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Enable Accessibility Service first! (Step 1)", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
-            screenCaptureLauncher.launch(projectionManager!!.createScreenCaptureIntent())
+            // On Android 13+ request POST_NOTIFICATIONS first so the foreground
+            // service notification is allowed — otherwise startForegroundService crashes
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                if (granted != PackageManager.PERMISSION_GRANTED) {
+                    notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    return@setOnClickListener
+                }
+            }
+            launchCaptureIntent()
         }
 
-        btnToggleBot.setOnClickListener {
-            toggleBot()
-        }
+        btnToggleBot.setOnClickListener { toggleBot() }
 
         updateStatus()
+    }
+
+    private fun launchCaptureIntent() {
+        try {
+            val intent = projectionManager!!.createScreenCaptureIntent()
+            screenCaptureLauncher.launch(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not start capture: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onResume() {
@@ -123,7 +150,7 @@ class MainActivity : AppCompatActivity() {
         val accessOk = isAccessibilityServiceEnabled()
         tvStatus.text = when {
             !accessOk -> "Status: ⚠ Accessibility not enabled"
-            !ScreenCaptureService.isReady -> "Status: ⚠ Screen capture not granted yet"
+            !ScreenCaptureService.isReady -> "Status: ⚠ Press 'Request Screen Capture'"
             botRunning -> "Status: 🟢 Running"
             else -> "Status: ✅ Ready — press START BOT"
         }
