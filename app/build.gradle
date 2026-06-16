@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId "com.example.fruitslicer"
         minSdk 26
-        targetSdk 34
+        targetSdk 33       // targeting 33 avoids Android 14 media projection restrictions
         versionCode 1
         versionName "1.0"
     }
